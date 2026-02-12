@@ -1,7 +1,9 @@
-/* MiniGolf Tour — Scoreboard (offline, localStorage) */
+/* MiniGolf Tour — Scoreboard (offline, localStorage)
+   Players: Walter vs Erik
+*/
 
-const STORAGE_KEY = "minigolf-tour:v1";
-const PLAYERS = ["Walter", "Erik"];
+const STORAGE_KEY = "minigolf-tour:v2";
+const PLAYERS = ["Walter", "Erik"]; // note: Erik with K
 
 function uid() {
   return "m_" + Math.random().toString(16).slice(2) + "_" + Date.now().toString(16);
@@ -16,7 +18,7 @@ function todayIso() {
 
 function seedData() {
   return {
-    version: 1,
+    version: 2,
     createdAt: new Date().toISOString(),
     players: PLAYERS,
     matches: [
@@ -60,26 +62,38 @@ function seedData() {
   };
 }
 
+function migrate(old) {
+  // Handle older exports with "Eric" spelling
+  const migrated = {
+    version: 2,
+    createdAt: old?.createdAt || new Date().toISOString(),
+    players: PLAYERS,
+    matches: Array.isArray(old?.matches)
+      ? old.matches.map((m) => ({
+          id: m.id || uid(),
+          date: m.date || "",
+          location: m.location || "",
+          venue: m.venue || "",
+          notes: m.notes || "",
+          winner:
+            m.winner === "Eric" ? "Erik" : PLAYERS.includes(m.winner) ? m.winner : "Walter",
+          scores: {
+            Walter: m.scores?.Walter ?? null,
+            Erik: m.scores?.Erik ?? m.scores?.Eric ?? null,
+          },
+        }))
+      : seedData().matches,
+  };
+  return migrated;
+}
+
 function load() {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) return seedData();
   try {
     const parsed = JSON.parse(raw);
     if (!parsed || !Array.isArray(parsed.matches)) return seedData();
-    // normalize
-    parsed.matches = parsed.matches.map((m) => ({
-      id: m.id || uid(),
-      date: m.date || "",
-      location: m.location || "",
-      venue: m.venue || "",
-      notes: m.notes || "",
-      winner: PLAYERS.includes(m.winner) ? m.winner : "Walter",
-      scores: {
-        Walter: m.scores?.Walter ?? null,
-        Erik: m.scores?.Erik ?? m.scores?.Eric ?? null,
-      },
-    }));
-    return parsed;
+    return migrate(parsed);
   } catch {
     return seedData();
   }
@@ -92,11 +106,8 @@ function save(state) {
 function sortMatches(matches) {
   // newest first; empty dates go last
   return [...matches].sort((a, b) => {
-    const ad = a.date || "0000-00-00";
-    const bd = b.date || "0000-00-00";
-    // treat empty as oldest
-    const aKey = a.date ? ad : "0000-00-00";
-    const bKey = b.date ? bd : "0000-00-00";
+    const aKey = a.date ? a.date : "0000-00-00";
+    const bKey = b.date ? b.date : "0000-00-00";
     if (aKey === bKey) return 0;
     return aKey > bKey ? -1 : 1;
   });
@@ -112,11 +123,10 @@ function computeStats(matches) {
     Erik: total ? Math.round((wins.Erik / total) * 100) : 0,
   };
 
-  // streaks based on chronological order (oldest -> newest)
+  // streaks based on chronological order (oldest -> newest), empty dates last
   const chronological = [...matches].sort((a, b) => {
     const ad = a.date || "9999-99-99";
     const bd = b.date || "9999-99-99";
-    // empty dates last in chronological
     if (ad === bd) return 0;
     return ad < bd ? -1 : 1;
   });
@@ -126,15 +136,10 @@ function computeStats(matches) {
 
   for (const m of chronological) {
     if (!m.winner) continue;
-    if (currentStreak.player === m.winner) {
-      currentStreak.count += 1;
-    } else {
-      currentStreak.player = m.winner;
-      currentStreak.count = 1;
-    }
-    if (currentStreak.count > bestStreak.count) {
-      bestStreak = { ...currentStreak };
-    }
+    if (currentStreak.player === m.winner) currentStreak.count += 1;
+    else currentStreak = { player: m.winner, count: 1 };
+
+    if (currentStreak.count > bestStreak.count) bestStreak = { ...currentStreak };
   }
 
   return { total, wins, winrate, currentStreak, bestStreak };
@@ -148,9 +153,19 @@ function esc(s) {
     .replaceAll('"', "&quot;");
 }
 
+function formatScore(m) {
+  const w = m.scores?.Walter;
+  const e = m.scores?.Erik;
+  if (w == null && e == null) return "—";
+  const a = w == null ? "-" : String(w);
+  const b = e == null ? "-" : String(e);
+  return `Walter ${a} · Erik ${b}`;
+}
+
 // DOM
-const $tbody = document.getElementById("matchesTbody");
 const $stats = document.getElementById("stats");
+const $matchesMeta = document.getElementById("matchesMeta");
+const $list = document.getElementById("matchesList");
 
 const $btnAdd = document.getElementById("btnAdd");
 const $btnExport = document.getElementById("btnExport");
@@ -179,67 +194,62 @@ const $btnCopy = document.getElementById("btnCopy");
 
 let state = load();
 
+function statRow(k, v) {
+  return `<div class="stat"><div class="stat__k">${esc(k)}</div><div class="stat__v">${esc(v)}</div></div>`;
+}
+
 function render() {
   const matches = sortMatches(state.matches);
-
-  // stats
   const st = computeStats(state.matches);
+
   $stats.innerHTML = [
-    row("Partite", st.total),
-    row("Vittorie Walter", `${st.wins.Walter} (${st.winrate.Walter}%)`),
-    row("Vittorie Erik", `${st.wins.Erik} (${st.winrate.Erik}%)`),
-    row(
+    statRow("Partite", st.total),
+    statRow("Vittorie Walter", `${st.wins.Walter} (${st.winrate.Walter}%)`),
+    statRow("Vittorie Erik", `${st.wins.Erik} (${st.winrate.Erik}%)`),
+    statRow(
       "Streak attuale",
-      st.currentStreak.player
-        ? `${st.currentStreak.player} × ${st.currentStreak.count}`
-        : "—"
+      st.currentStreak.player ? `${st.currentStreak.player} × ${st.currentStreak.count}` : "—"
     ),
-    row(
+    statRow(
       "Streak massima",
       st.bestStreak.player ? `${st.bestStreak.player} × ${st.bestStreak.count}` : "—"
     ),
-  ].join("\n");
+  ].join("");
 
-  // table
-  $tbody.innerHTML = matches
+  $matchesMeta.textContent = `${matches.length} partite`;
+
+  $list.innerHTML = matches
     .map((m) => {
-      const winnerClass = m.winner === "Walter" ? "walter" : "eric";
-      const badge = `<span class="badge ${winnerClass}">${esc(m.winner)}</span>`;
-      const date = m.date ? esc(m.date) : `<span class="muted">(n/a)</span>`;
+      const badgeClass = m.winner === "Walter" ? "badge--walter" : "badge--erik";
+      const date = m.date ? esc(m.date) : "(n/a)";
       const score = formatScore(m);
+      const notes = m.notes ? `<div class="match__notes">${esc(m.notes)}</div>` : "";
+
       return `
-        <tr>
-          <td>${date}</td>
-          <td>${esc(m.location)}</td>
-          <td>
-            <div><strong>${esc(m.venue)}</strong></div>
-            ${m.notes ? `<div class="muted">${esc(m.notes)}</div>` : ""}
-          </td>
-          <td>${badge}</td>
-          <td>${score}</td>
-          <td>
-            <div class="actions">
-              <button class="btn btn-secondary small" data-action="edit" data-id="${esc(m.id)}">Modifica</button>
+        <article class="match" data-id="${esc(m.id)}">
+          <div class="match__top">
+            <div>
+              <div class="match__where">${esc(m.location)}</div>
+              <div class="match__venue">${esc(m.venue)}</div>
             </div>
-          </td>
-        </tr>
+            <div style="text-align:right">
+              <div class="match__date">${date}</div>
+              <div class="match__badge ${badgeClass}">🏆 ${esc(m.winner)}</div>
+            </div>
+          </div>
+
+          <div class="match__mid">
+            <div class="kv"><div class="k">Strokes</div><div class="v">${esc(score)}</div></div>
+            ${notes}
+          </div>
+
+          <div class="match__actions">
+            <button class="btn" data-action="edit">Modifica</button>
+          </div>
+        </article>
       `;
     })
     .join("");
-}
-
-function row(k, v) {
-  return `<div class="stat-row"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`;
-}
-
-function formatScore(m) {
-  const w = m.scores?.Walter;
-  const e = m.scores?.Erik;
-  if (w == null && e == null) return `<span class="muted">—</span>`;
-  const parts = [];
-  parts.push(`Walter: ${w == null ? "-" : esc(w)}`);
-  parts.push(`Erik: ${e == null ? "-" : esc(e)}`);
-  return parts.join("<br>");
 }
 
 function openEditor(match) {
@@ -261,7 +271,6 @@ function openEditor(match) {
   $venue.value = m.venue || "";
   $notes.value = m.notes || "";
 
-  // radio
   const radios = $form.querySelectorAll('input[name="winner"]');
   radios.forEach((r) => (r.checked = r.value === m.winner));
 
@@ -269,7 +278,6 @@ function openEditor(match) {
   $scoreErik.value = m.scores?.Erik ?? "";
 
   $btnDelete.style.display = isNew ? "none" : "inline-flex";
-
   $editor.showModal();
 }
 
@@ -300,25 +308,7 @@ function exportJson() {
 
 function importJsonText(text) {
   const parsed = JSON.parse(text);
-  if (!parsed || !Array.isArray(parsed.matches)) throw new Error("JSON non valido");
-  // minimal normalize
-  state = {
-    version: 1,
-    createdAt: parsed.createdAt || new Date().toISOString(),
-    players: PLAYERS,
-    matches: parsed.matches.map((m) => ({
-      id: m.id || uid(),
-      date: m.date || "",
-      location: m.location || "",
-      venue: m.venue || "",
-      notes: m.notes || "",
-      winner: PLAYERS.includes(m.winner) ? m.winner : "Walter",
-      scores: {
-        Walter: m.scores?.Walter ?? null,
-        Erik: m.scores?.Erik ?? m.scores?.Eric ?? null,
-      },
-    })),
-  };
+  state = migrate(parsed);
   save(state);
   render();
 }
@@ -345,15 +335,14 @@ $btnDelete.addEventListener("click", () => {
   closeEditor();
 });
 
-$tbody.addEventListener("click", (e) => {
+$list.addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-action]");
   if (!btn) return;
-  const action = btn.getAttribute("data-action");
-  const id = btn.getAttribute("data-id");
-  if (action === "edit") {
-    const m = state.matches.find((x) => x.id === id);
-    if (m) openEditor(m);
-  }
+  const card = e.target.closest(".match");
+  const id = card?.getAttribute("data-id");
+  if (!id) return;
+  const m = state.matches.find((x) => x.id === id);
+  if (m) openEditor(m);
 });
 
 $form.addEventListener("submit", () => {
@@ -411,14 +400,6 @@ $importFile.addEventListener("change", async () => {
   }
 });
 
-// Small CSS helper class via JS (avoid extra css)
-document.documentElement.style.setProperty("--muted", getComputedStyle(document.documentElement).getPropertyValue("--muted"));
-
 // First render
 save(state);
 render();
-
-// Add muted class styling
-const style = document.createElement("style");
-style.textContent = `.muted{color:var(--muted); font-size:12px}`;
-document.head.appendChild(style);
