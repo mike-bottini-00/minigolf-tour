@@ -75,8 +75,7 @@ function migrate(old) {
           location: m.location || "",
           venue: m.venue || "",
           notes: m.notes || "",
-          winner:
-            m.winner === "Eric" ? "Erik" : PLAYERS.includes(m.winner) ? m.winner : "Walter",
+          winner: m.winner === "Eric" ? "Erik" : PLAYERS.includes(m.winner) ? m.winner : "Walter",
           scores: {
             Walter: m.scores?.Walter ?? null,
             Erik: m.scores?.Erik ?? m.scores?.Eric ?? null,
@@ -162,10 +161,61 @@ function formatScore(m) {
   return `Walter ${a} · Erik ${b}`;
 }
 
+function buildSpark(matchesSortedNewestFirst) {
+  // Take last 10 matches, but show oldest -> newest left->right
+  const last = matchesSortedNewestFirst.slice(0, 10).reverse();
+  if (!last.length) return "";
+
+  const heights = last.map((m, i) => {
+    // gentle variation so it doesn't look dead-flat
+    const base = 26;
+    const wobble = 10 + (i % 4) * 3;
+    return base + wobble;
+  });
+
+  return last
+    .map((m, i) => {
+      const cls = m.winner === "Walter" ? "bar bar--walter" : "bar bar--erik";
+      const title = `${m.date || "(n/a)"} — ${m.location} — ${m.winner}`;
+      return `<div class="${cls}" style="height:${heights[i]}px" title="${esc(title)}"></div>`;
+    })
+    .join("");
+}
+
+function scorelineHtml(st) {
+  return `
+    <div class="scoreline__side">
+      <div class="avatar" aria-hidden="true">W</div>
+      <div>
+        <div class="scoreline__name">Walter</div>
+        <div class="scoreline__tag">Winrate ${st.winrate.Walter}%</div>
+      </div>
+    </div>
+
+    <div class="scoreline__mid" aria-label="Punteggio">
+      <div class="score">${st.wins.Walter}</div>
+      <div class="dash">—</div>
+      <div class="score">${st.wins.Erik}</div>
+    </div>
+
+    <div class="scoreline__side" style="justify-content:flex-end">
+      <div>
+        <div class="scoreline__name" style="text-align:right">Erik</div>
+        <div class="scoreline__tag" style="text-align:right">Winrate ${st.winrate.Erik}%</div>
+      </div>
+      <div class="avatar" aria-hidden="true">E</div>
+    </div>
+  `;
+}
+
 // DOM
 const $stats = document.getElementById("stats");
 const $matchesMeta = document.getElementById("matchesMeta");
 const $list = document.getElementById("matchesList");
+
+const $scoreline = document.getElementById("scoreline");
+const $heroMeta = document.getElementById("heroMeta");
+const $spark = document.getElementById("spark");
 
 const $btnAdd = document.getElementById("btnAdd");
 const $btnExport = document.getElementById("btnExport");
@@ -199,9 +249,23 @@ function statRow(k, v) {
 }
 
 function render() {
-  const matches = sortMatches(state.matches);
+  const matchesNewest = sortMatches(state.matches);
   const st = computeStats(state.matches);
 
+  // Hero
+  if ($scoreline) $scoreline.innerHTML = scorelineHtml(st);
+  if ($heroMeta) {
+    const streakNow = st.currentStreak.player ? `${st.currentStreak.player} × ${st.currentStreak.count}` : "—";
+    const streakBest = st.bestStreak.player ? `${st.bestStreak.player} × ${st.bestStreak.count}` : "—";
+    $heroMeta.innerHTML = [
+      `<span class="pill">🗓️ Partite <b>${st.total}</b></span>`,
+      `<span class="pill">🔥 Streak attuale <b>${esc(streakNow)}</b></span>`,
+      `<span class="pill">🏅 Streak max <b>${esc(streakBest)}</b></span>`,
+    ].join("");
+  }
+  if ($spark) $spark.innerHTML = buildSpark(matchesNewest);
+
+  // Side stats
   $stats.innerHTML = [
     statRow("Partite", st.total),
     statRow("Vittorie Walter", `${st.wins.Walter} (${st.winrate.Walter}%)`),
@@ -216,9 +280,9 @@ function render() {
     ),
   ].join("");
 
-  $matchesMeta.textContent = `${matches.length} partite`;
+  $matchesMeta.textContent = `${matchesNewest.length} partite`;
 
-  $list.innerHTML = matches
+  $list.innerHTML = matchesNewest
     .map((m) => {
       const badgeClass = m.winner === "Walter" ? "badge--walter" : "badge--erik";
       const date = m.date ? esc(m.date) : "(n/a)";

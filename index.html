@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>MiniGolf Tour — Walter vs Erik</title>
   <link rel="stylesheet" href="styles.css" />
-  <meta name="theme-color" content="#0f172a" />
+  <meta name="theme-color" content="#0b1020" />
 </head>
 <body>
   <header class="topbar">
@@ -27,6 +27,22 @@
       </div>
     </div>
   </header>
+
+  <section class="hero">
+    <div class="hero__inner">
+      <div class="hero__card">
+        <div class="hero__title">Scoreboard</div>
+        <div id="scoreline" class="scoreline" aria-label="Risultato"></div>
+        <div id="heroMeta" class="hero__meta"></div>
+      </div>
+
+      <div class="hero__card hero__card--spark">
+        <div class="hero__title">Ultime partite</div>
+        <div id="spark" class="spark" aria-label="Andamento ultime partite"></div>
+        <div class="hero__hint">Barre: chi ha vinto (più chiaro = Walter, più verde = Erik)</div>
+      </div>
+    </div>
+  </section>
 
   <main class="layout">
     <section class="panel">
