@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MiniGolf Tour — Scoreboard</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <div class="logo" aria-hidden="true">⛳️</div>
+      <div>
+        <h1>MiniGolf Tour</h1>
+        <p class="sub">Scoreboard Walter vs Erik</p>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button id="btnExport" class="btn">Export JSON</button>
+      <label class="btn btn-secondary" for="importFile">Import JSON</label>
+      <input id="importFile" type="file" accept="application/json" hidden />
+      <button id="btnReset" class="btn btn-danger" title="Cancella i dati locali e ripristina i seed">Reset</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="grid">
+      <section class="card">
+        <h2>Statistiche</h2>
+        <div id="stats" class="stats"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Partite</h2>
+          <div class="card-head-actions">
+            <button id="btnAdd" class="btn">+ Nuova partita</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="table" aria-label="Elenco partite">
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Luogo</th>
+                <th>Venue</th>
+                <th>Vincitore</th>
+                <th>Punteggio</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="matchesTbody"></tbody>
+          </table>
+        </div>
+        <p class="hint">Tip: puoi lasciare vuoto il punteggio (strokes) e compilarlo più avanti.</p>
+      </section>
+    </section>
+  </main>
+
+  <!-- Modal editor -->
+  <dialog id="editor" class="modal">
+    <form id="matchForm" method="dialog" class="modal-content">
+      <div class="modal-head">
+        <h3 id="editorTitle">Partita</h3>
+        <button type="button" id="btnClose" class="icon-btn" aria-label="Chiudi">✕</button>
+      </div>
+
+      <input type="hidden" id="matchId" />
+
+      <div class="form-grid">
+        <label>
+          <span>Data</span>
+          <input id="date" type="date" />
+        </label>
+
+        <label>
+          <span>Città / Paese</span>
+          <input id="location" type="text" placeholder="Es. Dubai, UAE" required />
+        </label>
+
+        <label class="span2">
+          <span>Venue</span>
+          <input id="venue" type="text" placeholder="Es. Swingers" required />
+        </label>
+
+        <label class="span2">
+          <span>Note</span>
+          <textarea id="notes" rows="3" placeholder="Dettagli: mosaici, montagna, ecc."></textarea>
+        </label>
+
+        <fieldset class="span2">
+          <legend>Vincitore</legend>
+          <div class="radio-row">
+            <label><input type="radio" name="winner" value="Walter" required /> Walter</label>
+            <label><input type="radio" name="winner" value="Erik" required /> Erik</label>
+          </div>
+        </fieldset>
+
+        <fieldset class="span2">
+          <legend>Strokes (opzionale)</legend>
+          <div class="score-row">
+            <label>
+              <span>Walter</span>
+              <input id="scoreWalter" type="number" min="0" step="1" inputmode="numeric" placeholder="-" />
+            </label>
+            <label>
+              <span>Erik</span>
+              <input id="scoreErik" type="number" min="0" step="1" inputmode="numeric" placeholder="-" />
+            </label>
+          </div>
+        </fieldset>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" id="btnDelete" class="btn btn-danger">Elimina</button>
+        <div class="spacer"></div>
+        <button type="button" id="btnCancel" class="btn btn-secondary">Annulla</button>
+        <button type="submit" class="btn">Salva</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Export modal -->
+  <dialog id="exporter" class="modal">
+    <form method="dialog" class="modal-content">
+      <div class="modal-head">
+        <h3>Export JSON</h3>
+        <button type="button" id="btnCloseExport" class="icon-btn" aria-label="Chiudi">✕</button>
+      </div>
+      <p class="hint">Copia e salva questo JSON (backup). Oppure incollalo in Import.</p>
+      <textarea id="exportText" rows="10" spellcheck="false"></textarea>
+      <div class="modal-actions">
+        <button type="button" id="btnCopy" class="btn btn-secondary">Copia</button>
+        <div class="spacer"></div>
+        <button type="submit" class="btn">Chiudi</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
