@@ -433,8 +433,10 @@ function scheduleSync() {
           setSyncBadge('error', 'errore');
           if (!syncAlerted) {
             syncAlerted = true;
-            if (isInAppBrowser() && msg.toLowerCase().includes('load failed')) {
-              alert('Sync online fallito.\nSembra un limite del browser interno di WhatsApp: apri il link in Safari/Chrome e riprova.');
+            if (msg.toLowerCase().includes('load failed')) {
+              // Typical iOS/WebKit network error. Keep changes queued and stop spamming alerts.
+              setSyncBadge('offline', 'in attesa');
+              alert('Sync non riuscito adesso (rete/connessione). Tengo tutto salvato sul telefono e riprovo automaticamente quando torna la connessione.');
             } else {
               alert('Sync online fallito (salvato solo sul tuo device).\nDettaglio: ' + msg.slice(0, 160));
             }
