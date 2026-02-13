@@ -16,7 +16,6 @@ const CLOUDINARY_FOLDER = "minigolf";
 const SUPABASE_URL = 'https://qmiauqjqujumizibsyhn.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFtaWF1cWpxdWp1bWl6aWJzeWhuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA5NzYwNDQsImV4cCI6MjA4NjU1MjA0NH0.asXTjRrY9ZawVbTPSFSJbQWE4i3Zkrx1DHqZ-ZuDFw8';
 const SUPABASE_WRITE_ENDPOINT = SUPABASE_URL + '/functions/v1/write-state';
-const LOCAL_WRITE_TOKEN_KEY = 'minigolf-tour:writeToken';
 const POLL_MS = 6000;
 
 function uid() {
@@ -329,24 +328,16 @@ async function supabaseGetState() {
 }
 
 async function supabaseWriteState(data) {
-  const token = (localStorage.getItem(LOCAL_WRITE_TOKEN_KEY) || '').trim();
-  if (!token) throw new Error('missing_write_token');
-
-  const res = await fetch(SUPABASE_WRITE_ENDPOINT, {
+    const res = await fetch(SUPABASE_WRITE_ENDPOINT, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'x-write-token': token,
       apikey: SUPABASE_ANON_KEY,
       Authorization: 'Bearer ' + SUPABASE_ANON_KEY,
     },
     body: JSON.stringify({ data }),
   });
 
-  // If auth fails, clear local token so the next edit will ask again.
-  if (res.status === 401 || res.status === 403) {
-    localStorage.removeItem(LOCAL_WRITE_TOKEN_KEY);
-  }
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -356,14 +347,7 @@ async function supabaseWriteState(data) {
   return await res.json().catch(() => ({ ok: true }));
 }
 
-function ensureWriteToken() {
-  let token = localStorage.getItem(LOCAL_WRITE_TOKEN_KEY);
-  if (token) return true;
-  token = prompt('Inserisci codice admin per modificare questo Tour (te l\'ha dato Walter).');
-  if (!token) return false;
-  localStorage.setItem(LOCAL_WRITE_TOKEN_KEY, token.trim());
-  return true;
-}
+function ensureWriteToken() { return true; }
 
 let remoteUpdatedAt = null;
 let pollHandle = null;
@@ -412,16 +396,6 @@ function scheduleSync() {
       } catch (e) {
         console.error(e);
         const msg = String(e?.message || e);
-
-        // If we don't have the admin token, ask and retry.
-        if (msg.includes('missing_write_token')) {
-          if (ensureWriteToken()) {
-            // restart attempts with token now set
-            i = -1;
-            delay = 900;
-            continue;
-          }
-        }
 
         if (i === maxAttempts - 1) {
           setSyncBadge('error', 'errore');
