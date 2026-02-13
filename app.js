@@ -339,11 +339,10 @@ async function supabaseWriteState(data) {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'x-pin': pin,
       apikey: SUPABASE_ANON_KEY,
       Authorization: 'Bearer ' + SUPABASE_ANON_KEY,
     },
-    body: JSON.stringify({ data }),
+    body: JSON.stringify({ data, pin }),
   });
 
   if (res.status === 401 || res.status === 403) {
