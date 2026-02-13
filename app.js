@@ -433,7 +433,11 @@ function scheduleSync() {
           setSyncBadge('error', 'errore');
           if (!syncAlerted) {
             syncAlerted = true;
-            alert('Sync online fallito (salvato solo sul tuo device).\nDettaglio: ' + msg.slice(0, 160));
+            if (isInAppBrowser() && msg.toLowerCase().includes('load failed')) {
+              alert('Sync online fallito.\nSembra un limite del browser interno di WhatsApp: apri il link in Safari/Chrome e riprova.');
+            } else {
+              alert('Sync online fallito (salvato solo sul tuo device).\nDettaglio: ' + msg.slice(0, 160));
+            }
           }
           return;
         }
