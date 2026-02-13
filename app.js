@@ -36,7 +36,6 @@ function seedData() {
         venue: "(unknown mountain course)",
         notes: "",
         winner: "Walter",
-        scores: { Walter: null, Erik: null },
         photos: [],
       },
       {
@@ -46,7 +45,6 @@ function seedData() {
         venue: "Swingers",
         notes: "",
         winner: "Erik",
-        scores: { Walter: null, Erik: null },
         photos: [],
       },
       {
@@ -56,7 +54,6 @@ function seedData() {
         venue: "Las Americas (mosaic course)",
         notes: "",
         winner: "Erik",
-        scores: { Walter: null, Erik: null },
         photos: [],
       },
       {
@@ -66,7 +63,6 @@ function seedData() {
         venue: "Swingers",
         notes: "",
         winner: "Walter",
-        scores: { Walter: null, Erik: null },
         photos: [],
       },
     ],
@@ -102,7 +98,6 @@ function migrate(old) {
           venue: m.venue || "",
           notes: m.notes || "",
           winner: m.winner === "Eric" ? "Erik" : PLAYERS.includes(m.winner) ? m.winner : "Walter",
-          scores: {
             Walter: m.scores?.Walter ?? null,
             Erik: m.scores?.Erik ?? m.scores?.Eric ?? null,
           },
@@ -180,12 +175,7 @@ function esc(s) {
 }
 
 function formatScore(m) {
-  const w = m.scores?.Walter;
-  const e = m.scores?.Erik;
-  if (w == null && e == null) return "—";
-  const a = w == null ? "-" : String(w);
-  const b = e == null ? "-" : String(e);
-  return `Walter ${a} · Erik ${b}`;
+  return '—';
 }
 
 function buildSpark(matchesSortedNewestFirst) {
@@ -341,8 +331,6 @@ const $date = document.getElementById("date");
 const $location = document.getElementById("location");
 const $venue = document.getElementById("venue");
 const $notes = document.getElementById("notes");
-const $scoreWalter = document.getElementById("scoreWalter");
-const $scoreErik = document.getElementById("scoreErik");
 
 const $photos = document.getElementById("photos");
 const $photoPreview = document.getElementById("photoPreview");
@@ -462,7 +450,6 @@ function render() {
     .map((m) => {
       const badgeClass = m.winner === "Walter" ? "badge--walter" : "badge--erik";
       const date = m.date ? esc(m.date) : "(n/a)";
-      const score = formatScore(m);
       const notes = m.notes ? `<div class="match__notes">${esc(m.notes)}</div>` : "";
       const photosBlock = matchPhotoThumbsHtml(m);
 
@@ -480,8 +467,7 @@ function render() {
           </div>
 
           <div class="match__mid">
-            <div class="kv"><div class="k">Strokes</div><div class="v">${esc(score)}</div></div>
-            ${photosBlock}
+                        ${photosBlock}
             ${notes}
           </div>
 
@@ -503,7 +489,6 @@ function openEditor(match) {
     venue: "",
     notes: "",
     winner: "Walter",
-    scores: { Walter: null, Erik: null },
     photos: [],
   };
 
@@ -524,8 +509,6 @@ function openEditor(match) {
   const radios = $form.querySelectorAll('input[name="winner"]');
   radios.forEach((r) => (r.checked = r.value === m.winner));
 
-  $scoreWalter.value = m.scores?.Walter ?? "";
-  $scoreErik.value = m.scores?.Erik ?? "";
 
   $btnDelete.style.display = isNew ? "none" : "inline-flex";
   $editor.showModal();
@@ -678,8 +661,6 @@ $form.addEventListener("submit", (e) => {
   const notes = $notes.value.trim();
   const winner = $form.querySelector('input[name="winner"]:checked')?.value;
 
-  const sw = $scoreWalter.value === "" ? null : Number($scoreWalter.value);
-  const se = $scoreErik.value === "" ? null : Number($scoreErik.value);
 
   if (!location || !venue || !winner) return;
 
@@ -690,7 +671,6 @@ $form.addEventListener("submit", (e) => {
     venue,
     notes,
     winner,
-    scores: { Walter: Number.isFinite(sw) ? sw : null, Erik: Number.isFinite(se) ? se : null },
     photos: normalizePhotos(editingPhotos),
   };
 
