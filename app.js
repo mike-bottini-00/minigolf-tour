@@ -18,6 +18,10 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const SUPABASE_WRITE_ENDPOINT = SUPABASE_URL + '/functions/v1/write-state';
 const POLL_MS = 6000;
 
+// Edit PIN (light gating, per user request)
+const EDIT_PIN = '7010';
+const LOCAL_PIN_KEY = 'minigolf-tour:pin';
+
 function uid() {
   return "m_" + Math.random().toString(16).slice(2) + "_" + Date.now().toString(16);
 }
@@ -328,16 +332,24 @@ async function supabaseGetState() {
 }
 
 async function supabaseWriteState(data) {
-    const res = await fetch(SUPABASE_WRITE_ENDPOINT, {
+  const pin = (localStorage.getItem(LOCAL_PIN_KEY) || '').trim();
+  if (!pin) throw new Error('missing_pin');
+
+  const res = await fetch(SUPABASE_WRITE_ENDPOINT, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
+      'x-pin': pin,
       apikey: SUPABASE_ANON_KEY,
       Authorization: 'Bearer ' + SUPABASE_ANON_KEY,
     },
     body: JSON.stringify({ data }),
   });
 
+  if (res.status === 401 || res.status === 403) {
+    localStorage.removeItem(LOCAL_PIN_KEY);
+    throw new Error('bad_pin');
+  }
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -347,7 +359,18 @@ async function supabaseWriteState(data) {
   return await res.json().catch(() => ({ ok: true }));
 }
 
-function ensureWriteToken() { return true; }
+function ensureWriteToken() {
+  const existing = (localStorage.getItem(LOCAL_PIN_KEY) || '').trim();
+  if (existing === EDIT_PIN) return true;
+  const pin = (prompt('PIN per modificare/aggiungere (4 cifre):') || '').trim();
+  if (!pin) return false;
+  if (pin !== EDIT_PIN) {
+    alert('PIN errato');
+    return false;
+  }
+  localStorage.setItem(LOCAL_PIN_KEY, pin);
+  return true;
+}
 
 let remoteUpdatedAt = null;
 let pollHandle = null;
@@ -396,6 +419,15 @@ function scheduleSync() {
       } catch (e) {
         console.error(e);
         const msg = String(e?.message || e);
+
+        // Ask for PIN if missing/invalid, then retry.
+        if (msg.includes('missing_pin') || msg.includes('bad_pin')) {
+          if (ensureWriteToken()) {
+            i = -1;
+            delay = 900;
+            continue;
+          }
+        }
 
         if (i === maxAttempts - 1) {
           setSyncBadge('error', 'errore');
