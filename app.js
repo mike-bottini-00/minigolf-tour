@@ -336,6 +336,8 @@ async function supabaseWriteState(data) {
     headers: {
       'content-type': 'application/json',
       'x-write-token': token,
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: 'Bearer ' + SUPABASE_ANON_KEY,
     },
     body: JSON.stringify({ data }),
   });
