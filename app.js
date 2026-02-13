@@ -370,30 +370,60 @@ let pollHandle = null;
 let syncTimer = null;
 let syncAlerted = false;
 
+let $syncBadge = null;
+let $inAppBanner = null;
+
+function setSyncBadge(state, detail) {
+  if (!$syncBadge) return;
+  $syncBadge.className = `sync sync--${state}`;
+  $syncBadge.textContent = detail ? `Sync: ${detail}` : `Sync: ${state}`;
+}
+
+function isInAppBrowser() {
+  const ua = navigator.userAgent || "";
+  return /WhatsApp|FBAN|FBAV|Instagram/i.test(ua);
+}
+
+
 function scheduleSync() {
   clearTimeout(syncTimer);
   syncTimer = setTimeout(async () => {
-    const attempts = 2;
-    for (let i = 0; i < attempts; i++) {
+    const maxAttempts = 5;
+    let delay = 900;
+
+    // Persist last payload so we can retry after reload
+    try {
+      localStorage.setItem('minigolf-tour:pendingWrite', JSON.stringify(state));
+    } catch {}
+
+    for (let i = 0; i < maxAttempts; i++) {
+      if (!navigator.onLine) {
+        setSyncBadge('offline', 'offline');
+        break;
+      }
+
       try {
+        setSyncBadge('syncing', 'sync…');
         await supabaseWriteState(state);
+        setSyncBadge('idle', 'ok');
         syncAlerted = false;
+        try { localStorage.removeItem('minigolf-tour:pendingWrite'); } catch {}
         return;
       } catch (e) {
         console.error(e);
+        const msg = String(e?.message || e);
 
-        // tiny retry (often fixes flaky mobile networks)
-        if (i < attempts - 1) {
-          await new Promise((r) => setTimeout(r, 900));
-          continue;
+        if (i === maxAttempts - 1) {
+          setSyncBadge('error', 'errore');
+          if (!syncAlerted) {
+            syncAlerted = true;
+            alert('Sync online fallito (salvato solo sul tuo device).\nDettaglio: ' + msg.slice(0, 160));
+          }
+          return;
         }
 
-        if (!syncAlerted) {
-          syncAlerted = true;
-          const msg = String(e?.message || e);
-          // Show compact reason to speed up debugging
-          alert('Sync online fallito (salvato solo sul tuo device).\nDettaglio: ' + msg.slice(0, 120));
-        }
+        await new Promise((r) => setTimeout(r, delay + Math.floor(Math.random() * 250)));
+        delay = Math.min(30_000, delay * 2);
       }
     }
   }, 650);
@@ -433,6 +463,10 @@ const $btnAdd = document.getElementById("btnAdd");
 const $btnExport = document.getElementById("btnExport");
 const $btnReset = document.getElementById("btnReset");
 const $importFile = document.getElementById("importFile");
+
+$syncBadge = document.getElementById("syncBadge");
+$inAppBanner = document.getElementById("inAppBanner");
+if ($inAppBanner && isInAppBrowser()) $inAppBanner.hidden = false;
 
 const $editor = document.getElementById("editor");
 const $form = document.getElementById("matchForm");
