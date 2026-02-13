@@ -360,6 +360,15 @@ const $btnCopy = document.getElementById("btnCopy");
 
 let state = load();
 let editingPhotos = []; // array of {id,name,type,url,publicId,createdAt}
+let uploadsInFlight = 0;
+let $btnSave = null;
+
+function setUploading(on){
+  if(on) uploadsInFlight += 1;
+  else uploadsInFlight = Math.max(0, uploadsInFlight - 1);
+  if($btnSave) $btnSave.disabled = uploadsInFlight > 0;
+}
+
 
 function statRow(k, v) {
   return `<div class="stat"><div class="stat__k">${esc(k)}</div><div class="stat__v">${esc(v)}</div></div>`;
@@ -502,6 +511,9 @@ function openEditor(match) {
   renderPhotoPreview();
   if ($photos) $photos.value = "";
 
+  $btnSave = $form.querySelector('button[type="submit"]');
+  if($btnSave) $btnSave.disabled = uploadsInFlight > 0;
+
   $editorTitle.textContent = isNew ? "Nuova partita" : "Modifica partita";
   $matchId.value = m.id;
   $date.value = m.date || "";
@@ -622,6 +634,7 @@ if ($photos) {
       if (!file.type.startsWith("image/")) continue;
 
       try {
+        setUploading(true);
         const { dataUrl, outType } = await downscaleToDataUrl(file, { maxDim: 1600, quality: 0.82 });
 
         // Upload to Cloudinary (shared)
@@ -639,9 +652,11 @@ if ($photos) {
         });
 
         renderPhotoPreview();
+        setUploading(false);
       } catch (err) {
         console.error(err);
         alert("Upload foto fallito. Riprova tra poco (o con una foto diversa). ");
+        setUploading(false);
       }
     }
 
@@ -649,7 +664,12 @@ if ($photos) {
   });
 }
 
-$form.addEventListener("submit", () => {
+$form.addEventListener("submit", (e) => {
+  if (uploadsInFlight > 0) {
+    e.preventDefault();
+    alert("Sto ancora caricando le foto… aspetta 2 secondi e riprova a salvare.");
+    return;
+  }
   const id = $matchId.value || uid();
   const date = $date.value || "";
   const location = $location.value.trim();
