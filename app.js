@@ -12,6 +12,13 @@ const CLOUDINARY_CLOUD_NAME = "ddvvsvn4l";
 const CLOUDINARY_UPLOAD_PRESET = "minigolf_unsigned";
 const CLOUDINARY_FOLDER = "minigolf";
 
+// Supabase (shared tour state)
+const SUPABASE_URL = 'https://qmiauqjqujumizibsyhn.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFtaWF1cWpxdWp1bWl6aWJzeWhuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA5NzYwNDQsImV4cCI6MjA4NjU1MjA0NH0.asXTjRrY9ZawVbTPSFSJbQWE4i3Zkrx1DHqZ-ZuDFw8';
+const SUPABASE_WRITE_ENDPOINT = SUPABASE_URL + '/functions/v1/write-state';
+const LOCAL_WRITE_TOKEN_KEY = 'minigolf-tour:writeToken';
+const POLL_MS = 6000;
+
 function uid() {
   return "m_" + Math.random().toString(16).slice(2) + "_" + Date.now().toString(16);
 }
@@ -307,6 +314,89 @@ async function uploadToCloudinary(dataUrl) {
   return await res.json();
 }
 
+async function supabaseGetState() {
+  const url = SUPABASE_URL + '/rest/v1/tour_state?id=eq.main&select=data,updated_at';
+  const res = await fetch(url, {
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: 'Bearer ' + SUPABASE_ANON_KEY,
+    },
+  });
+  if (!res.ok) throw new Error('supabase_read_failed:' + res.status);
+  const rows = await res.json();
+  const row = rows?.[0];
+  return { data: row?.data ?? null, updatedAt: row?.updated_at ?? null };
+}
+
+async function supabaseWriteState(data) {
+  const token = localStorage.getItem(LOCAL_WRITE_TOKEN_KEY) || '';
+  if (!token) throw new Error('missing_write_token');
+  const res = await fetch(SUPABASE_WRITE_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-write-token': token,
+    },
+    body: JSON.stringify({ data }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error('supabase_write_failed:' + res.status + ':' + text.slice(0, 120));
+  }
+  return await res.json().catch(() => ({ ok: true }));
+}
+
+function ensureWriteToken() {
+  let token = localStorage.getItem(LOCAL_WRITE_TOKEN_KEY);
+  if (token) return true;
+  token = prompt('Inserisci codice admin per modificare questo Tour (te l\'ha dato Walter).');
+  if (!token) return false;
+  localStorage.setItem(LOCAL_WRITE_TOKEN_KEY, token.trim());
+  return true;
+}
+
+let remoteUpdatedAt = null;
+let pollHandle = null;
+let syncTimer = null;
+let syncAlerted = false;
+
+function scheduleSync() {
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(async () => {
+    try {
+      await supabaseWriteState(state);
+      syncAlerted = false;
+    } catch (e) {
+      console.error(e);
+      if (!syncAlerted) {
+        syncAlerted = true;
+        alert('Sync online fallito (salvato solo sul tuo device). Riprova tra poco.');
+      }
+    }
+  }, 650);
+}
+
+function startPolling() {
+  clearInterval(pollHandle);
+  pollHandle = setInterval(async () => {
+    try {
+      const r = await supabaseGetState();
+      if (!r.updatedAt) return;
+      if (!remoteUpdatedAt || r.updatedAt > remoteUpdatedAt) {
+        remoteUpdatedAt = r.updatedAt;
+        if (r.data && typeof r.data === 'object') {
+          state = migrate(r.data);
+          save(state);
+          render();
+        }
+      }
+    } catch {
+      // silent
+    }
+  }, POLL_MS);
+}
+
+
 // DOM
 const $stats = document.getElementById("stats");
 const $matchesMeta = document.getElementById("matchesMeta");
@@ -549,14 +639,16 @@ function importJsonText(text) {
 }
 
 // Events
-$btnAdd.addEventListener("click", () => openEditor(null));
+$btnAdd.addEventListener("click", () => { if(!ensureWriteToken()) return; openEditor(null); });
 $btnExport.addEventListener("click", exportJson);
 $btnReset.addEventListener("click", () => {
   const ok = confirm("Resetta i dati locali? (perdi le modifiche non esportate)");
   if (!ok) return;
+  if(!ensureWriteToken()) return;
   state = seedData();
   save(state);
   render();
+  scheduleSync();
 });
 
 $btnClose.addEventListener("click", closeEditor);
@@ -573,6 +665,7 @@ $btnDelete.addEventListener("click", () => {
   const ok = confirm("Eliminare questa partita?");
   if (!ok) return;
   deleteMatch(id);
+  scheduleSync();
   closeEditor();
 });
 
@@ -590,6 +683,7 @@ $list.addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-action]");
   if (!btn) return;
   if (!matchId) return;
+  if(!ensureWriteToken()) return;
   const m = state.matches.find((x) => x.id === matchId);
   if (m) openEditor(m);
 });
@@ -677,6 +771,7 @@ $form.addEventListener("submit", (e) => {
   };
 
   upsertMatch(m);
+  scheduleSync();
   closeEditor();
 });
 
