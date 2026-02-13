@@ -98,6 +98,8 @@ function migrate(old) {
           venue: m.venue || "",
           notes: m.notes || "",
           winner: m.winner === "Eric" ? "Erik" : PLAYERS.includes(m.winner) ? m.winner : "Walter",
+          // keep scores if present (backward compatibility)
+          scores: {
             Walter: m.scores?.Walter ?? null,
             Erik: m.scores?.Erik ?? m.scores?.Eric ?? null,
           },
