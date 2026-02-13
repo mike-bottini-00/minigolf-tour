@@ -665,6 +665,7 @@ if ($photos) {
 }
 
 $form.addEventListener("submit", (e) => {
+  e.preventDefault();
   if (uploadsInFlight > 0) {
     e.preventDefault();
     alert("Sto ancora caricando le foto… aspetta 2 secondi e riprova a salvare.");
