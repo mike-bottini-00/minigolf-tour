@@ -1,9 +1,16 @@
 /* MiniGolf Tour — Scoreboard (offline, localStorage)
    Players: Walter vs Erik
+
+   Photos: uploaded to Cloudinary (shared) using unsigned uploads.
 */
 
-const STORAGE_KEY = "minigolf-tour:v2";
+const STORAGE_KEY = "minigolf-tour:v3";
 const PLAYERS = ["Walter", "Erik"]; // note: Erik with K
+
+// Cloudinary (shared storage)
+const CLOUDINARY_CLOUD_NAME = "ddvvsvn4l";
+const CLOUDINARY_UPLOAD_PRESET = "minigolf_unsigned";
+const CLOUDINARY_FOLDER = "minigolf";
 
 function uid() {
   return "m_" + Math.random().toString(16).slice(2) + "_" + Date.now().toString(16);
@@ -18,7 +25,7 @@ function todayIso() {
 
 function seedData() {
   return {
-    version: 2,
+    version: 3,
     createdAt: new Date().toISOString(),
     players: PLAYERS,
     matches: [
@@ -69,19 +76,22 @@ function seedData() {
 function normalizePhotos(photos) {
   if (!Array.isArray(photos)) return [];
   return photos
-    .filter((p) => p && typeof p === "object" && typeof p.dataUrl === "string")
+    .filter((p) => p && typeof p === "object" && typeof p.url === "string")
     .map((p) => ({
       id: p.id || uid(),
       name: p.name || "photo",
       type: p.type || "image/*",
-      dataUrl: p.dataUrl,
+      url: p.url,
+      publicId: p.publicId || null,
+      createdAt: p.createdAt || null,
     }));
 }
 
 function migrate(old) {
-  // Handle older exports with "Eric" spelling and missing fields
+  // Handle older exports with "Eric" spelling and missing fields.
+  // If photos are stored as dataUrl (v2), drop them (they were device-local).
   const migrated = {
-    version: 2,
+    version: 3,
     createdAt: old?.createdAt || new Date().toISOString(),
     players: PLAYERS,
     matches: Array.isArray(old?.matches)
@@ -224,15 +234,6 @@ function scorelineHtml(st) {
   `;
 }
 
-function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const fr = new FileReader();
-    fr.onerror = () => reject(new Error("read_failed"));
-    fr.onload = () => resolve(String(fr.result));
-    fr.readAsDataURL(file);
-  });
-}
-
 function loadImageFromFile(file) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -255,7 +256,6 @@ async function downscaleToDataUrl(file, opts = {}) {
   const maxDim = opts.maxDim ?? 1600;
   const quality = opts.quality ?? 0.82;
 
-  // If browser can't decode this format, throw.
   const img = await loadImageFromFile(file);
   try {
     const w = img.naturalWidth || img.width;
@@ -272,42 +272,47 @@ async function downscaleToDataUrl(file, opts = {}) {
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("no_canvas");
 
-    // Draw
     ctx.drawImage(img, 0, 0, tw, th);
 
-    // Prefer JPEG to drastically cut size; keep PNG only if original was PNG and small
-    const preferJpeg = file.type !== "image/png";
-    const mime = preferJpeg ? "image/jpeg" : "image/png";
+    // Prefer JPEG to cut size
+    let dataUrl = canvas.toDataURL("image/jpeg", quality);
 
-    let dataUrl = canvas.toDataURL(mime, quality);
-
-    // If still huge, try lower quality (JPEG)
-    if (mime === "image/jpeg" && dataUrl.length > 2_200_000) {
+    // If still huge, try lower quality
+    if (dataUrl.length > 2_200_000) {
       dataUrl = canvas.toDataURL("image/jpeg", 0.72);
     }
 
-    return { dataUrl, outType: mime };
+    return { dataUrl, outType: "image/jpeg" };
   } finally {
     cleanupImage(img);
   }
 }
 
-function prettyBytes(n) {
-  const u = ["B", "KB", "MB", "GB"];
-  let i = 0;
-  let x = Number(n) || 0;
-  while (x >= 1024 && i < u.length - 1) {
-    x /= 1024;
-    i++;
+function cloudinaryThumb(url) {
+  // Insert a transform segment right after /upload/
+  try {
+    return url.replace(
+      "/upload/",
+      "/upload/w_220,h_220,c_fill,q_auto,f_auto/"
+    );
+  } catch {
+    return url;
   }
-  return `${x.toFixed(i ? 1 : 0)} ${u[i]}`;
 }
 
-function dataUrlApproxBytes(dataUrl) {
-  // rough estimate: base64 length * 3/4
-  const comma = dataUrl.indexOf(",");
-  const b64 = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
-  return Math.floor((b64.length * 3) / 4);
+async function uploadToCloudinary(dataUrl) {
+  const endpoint = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`;
+  const fd = new FormData();
+  fd.append("file", dataUrl);
+  fd.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+  fd.append("folder", CLOUDINARY_FOLDER);
+
+  const res = await fetch(endpoint, { method: "POST", body: fd });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`cloudinary_upload_failed:${res.status}:${text.slice(0, 120)}`);
+  }
+  return await res.json();
 }
 
 // DOM
@@ -354,7 +359,7 @@ const $btnCloseExport = document.getElementById("btnCloseExport");
 const $btnCopy = document.getElementById("btnCopy");
 
 let state = load();
-let editingPhotos = []; // array of {id,name,type,dataUrl}
+let editingPhotos = []; // array of {id,name,type,url,publicId,createdAt}
 
 function statRow(k, v) {
   return `<div class="stat"><div class="stat__k">${esc(k)}</div><div class="stat__v">${esc(v)}</div></div>`;
@@ -366,7 +371,7 @@ function renderPhotoPreview() {
     .map(
       (p) => `
       <div class="photo" data-photo-id="${esc(p.id)}">
-        <img src="${esc(p.dataUrl)}" alt="${esc(p.name)}" />
+        <img src="${esc(cloudinaryThumb(p.url))}" alt="${esc(p.name)}" />
         <button type="button" class="photo__x" title="Rimuovi">×</button>
       </div>
     `
@@ -387,7 +392,7 @@ function matchPhotoThumbsHtml(m) {
         .map(
           (p) => `
           <div class="photo" data-photo-open="1" data-photo-id="${esc(p.id)}" title="Apri foto">
-            <img src="${esc(p.dataUrl)}" alt="${esc(p.name)}" />
+            <img src="${esc(cloudinaryThumb(p.url))}" alt="${esc(p.name)}" />
           </div>
         `
         )
@@ -406,7 +411,7 @@ function openViewer(matchId, photoId) {
 
   $viewerTitle.textContent = "Foto";
   $viewerSub.textContent = `${m.location} — ${m.venue}`;
-  $viewerImg.src = p.dataUrl;
+  $viewerImg.src = p.url;
   $viewer.showModal();
 }
 
@@ -609,32 +614,38 @@ if ($photos) {
     const files = Array.from($photos.files || []);
     if (!files.length) return;
 
-    // basic safety: avoid huge memory usage
     const MAX_FILES = 6;
     const take = files.slice(0, MAX_FILES);
 
+    // Upload sequentially (keeps things simple)
     for (const file of take) {
       if (!file.type.startsWith("image/")) continue;
 
       try {
-        // Always downscale/compress iPhone pics.
         const { dataUrl, outType } = await downscaleToDataUrl(file, { maxDim: 1600, quality: 0.82 });
-        const approx = dataUrlApproxBytes(dataUrl);
 
-        // Hard cap after compression (still too big)
-        if (approx > 2_700_000) {
-          alert(`Foto ancora troppo grande anche dopo compressione: ${file.name} (~${prettyBytes(approx)}). Prova uno screenshot o una foto più piccola.`);
-          continue;
-        }
+        // Upload to Cloudinary (shared)
+        const up = await uploadToCloudinary(dataUrl);
+        const url = up.secure_url || up.url;
+        if (!url) throw new Error("no_url");
 
-        editingPhotos.push({ id: uid(), name: file.name, type: outType, dataUrl });
-      } catch {
-        alert("Non riesco a importare questa foto (formato non supportato o errore). Prova uno screenshot e riprova.");
+        editingPhotos.push({
+          id: uid(),
+          name: file.name,
+          type: outType,
+          url,
+          publicId: up.public_id || null,
+          createdAt: new Date().toISOString(),
+        });
+
+        renderPhotoPreview();
+      } catch (err) {
+        console.error(err);
+        alert("Upload foto fallito. Riprova tra poco (o con una foto diversa). ");
       }
     }
 
     $photos.value = "";
-    renderPhotoPreview();
   });
 }
 
