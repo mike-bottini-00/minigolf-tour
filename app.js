@@ -332,9 +332,6 @@ async function supabaseGetState() {
 }
 
 async function supabaseWriteState(data) {
-  const pin = (localStorage.getItem(LOCAL_PIN_KEY) || '').trim();
-  if (!pin) throw new Error('missing_pin');
-
   const res = await fetch(SUPABASE_WRITE_ENDPOINT, {
     method: 'POST',
     headers: {
@@ -342,13 +339,8 @@ async function supabaseWriteState(data) {
       apikey: SUPABASE_ANON_KEY,
       Authorization: 'Bearer ' + SUPABASE_ANON_KEY,
     },
-    body: JSON.stringify({ data, pin }),
+    body: JSON.stringify({ data }),
   });
-
-  if (res.status === 401 || res.status === 403) {
-    localStorage.removeItem(LOCAL_PIN_KEY);
-    throw new Error('bad_pin');
-  }
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -359,15 +351,7 @@ async function supabaseWriteState(data) {
 }
 
 function ensureWriteToken() {
-  const existing = (localStorage.getItem(LOCAL_PIN_KEY) || '').trim();
-  if (existing === EDIT_PIN) return true;
-  const pin = (prompt('PIN per modificare/aggiungere (4 cifre):') || '').trim();
-  if (!pin) return false;
-  if (pin !== EDIT_PIN) {
-    alert('PIN errato');
-    return false;
-  }
-  localStorage.setItem(LOCAL_PIN_KEY, pin);
+  // PIN removed by request
   return true;
 }
 
@@ -419,14 +403,8 @@ function scheduleSync() {
         console.error(e);
         const msg = String(e?.message || e);
 
-        // Ask for PIN if missing/invalid, then retry.
-        if (msg.includes('missing_pin') || msg.includes('bad_pin')) {
-          if (ensureWriteToken()) {
-            i = -1;
-            delay = 900;
-            continue;
-          }
-        }
+        // PIN removed: no special retry on missing/invalid PIN
+
 
         if (i === maxAttempts - 1) {
           setSyncBadge('error', 'errore');
