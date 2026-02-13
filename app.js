@@ -30,6 +30,7 @@ function seedData() {
         notes: "",
         winner: "Walter",
         scores: { Walter: null, Erik: null },
+        photos: [],
       },
       {
         id: uid(),
@@ -39,6 +40,7 @@ function seedData() {
         notes: "",
         winner: "Erik",
         scores: { Walter: null, Erik: null },
+        photos: [],
       },
       {
         id: uid(),
@@ -48,6 +50,7 @@ function seedData() {
         notes: "",
         winner: "Erik",
         scores: { Walter: null, Erik: null },
+        photos: [],
       },
       {
         id: uid(),
@@ -57,13 +60,26 @@ function seedData() {
         notes: "",
         winner: "Walter",
         scores: { Walter: null, Erik: null },
+        photos: [],
       },
     ],
   };
 }
 
+function normalizePhotos(photos) {
+  if (!Array.isArray(photos)) return [];
+  return photos
+    .filter((p) => p && typeof p === "object" && typeof p.dataUrl === "string")
+    .map((p) => ({
+      id: p.id || uid(),
+      name: p.name || "photo",
+      type: p.type || "image/*",
+      dataUrl: p.dataUrl,
+    }));
+}
+
 function migrate(old) {
-  // Handle older exports with "Eric" spelling
+  // Handle older exports with "Eric" spelling and missing fields
   const migrated = {
     version: 2,
     createdAt: old?.createdAt || new Date().toISOString(),
@@ -80,6 +96,7 @@ function migrate(old) {
             Walter: m.scores?.Walter ?? null,
             Erik: m.scores?.Erik ?? m.scores?.Eric ?? null,
           },
+          photos: normalizePhotos(m.photos),
         }))
       : seedData().matches,
   };
@@ -167,7 +184,6 @@ function buildSpark(matchesSortedNewestFirst) {
   if (!last.length) return "";
 
   const heights = last.map((m, i) => {
-    // gentle variation so it doesn't look dead-flat
     const base = 26;
     const wobble = 10 + (i % 4) * 3;
     return base + wobble;
@@ -208,6 +224,15 @@ function scorelineHtml(st) {
   `;
 }
 
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onerror = () => reject(new Error("read_failed"));
+    fr.onload = () => resolve(String(fr.result));
+    fr.readAsDataURL(file);
+  });
+}
+
 // DOM
 const $stats = document.getElementById("stats");
 const $matchesMeta = document.getElementById("matchesMeta");
@@ -237,15 +262,75 @@ const $notes = document.getElementById("notes");
 const $scoreWalter = document.getElementById("scoreWalter");
 const $scoreErik = document.getElementById("scoreErik");
 
+const $photos = document.getElementById("photos");
+const $photoPreview = document.getElementById("photoPreview");
+
+const $viewer = document.getElementById("viewer");
+const $viewerImg = document.getElementById("viewerImg");
+const $viewerTitle = document.getElementById("viewerTitle");
+const $viewerSub = document.getElementById("viewerSub");
+const $btnCloseViewer = document.getElementById("btnCloseViewer");
+
 const $exporter = document.getElementById("exporter");
 const $exportText = document.getElementById("exportText");
 const $btnCloseExport = document.getElementById("btnCloseExport");
 const $btnCopy = document.getElementById("btnCopy");
 
 let state = load();
+let editingPhotos = []; // array of {id,name,type,dataUrl}
 
 function statRow(k, v) {
   return `<div class="stat"><div class="stat__k">${esc(k)}</div><div class="stat__v">${esc(v)}</div></div>`;
+}
+
+function renderPhotoPreview() {
+  if (!$photoPreview) return;
+  $photoPreview.innerHTML = editingPhotos
+    .map(
+      (p) => `
+      <div class="photo" data-photo-id="${esc(p.id)}">
+        <img src="${esc(p.dataUrl)}" alt="${esc(p.name)}" />
+        <button type="button" class="photo__x" title="Rimuovi">×</button>
+      </div>
+    `
+    )
+    .join("");
+}
+
+function matchPhotoThumbsHtml(m) {
+  const photos = normalizePhotos(m.photos);
+  if (!photos.length) return "";
+  const top = photos.slice(0, 4);
+  const more = photos.length - top.length;
+
+  return `
+    <div class="kv"><div class="k">Foto</div><div class="v">${photos.length}</div></div>
+    <div class="photos">
+      ${top
+        .map(
+          (p) => `
+          <div class="photo" data-photo-open="1" data-photo-id="${esc(p.id)}" title="Apri foto">
+            <img src="${esc(p.dataUrl)}" alt="${esc(p.name)}" />
+          </div>
+        `
+        )
+        .join("")}
+      ${more > 0 ? `<div class="photo" style="display:grid;place-items:center;color:rgba(233,240,255,.8)">+${more}</div>` : ""}
+    </div>
+  `;
+}
+
+function openViewer(matchId, photoId) {
+  const m = state.matches.find((x) => x.id === matchId);
+  if (!m) return;
+  const photos = normalizePhotos(m.photos);
+  const p = photos.find((x) => x.id === photoId);
+  if (!p) return;
+
+  $viewerTitle.textContent = "Foto";
+  $viewerSub.textContent = `${m.location} — ${m.venue}`;
+  $viewerImg.src = p.dataUrl;
+  $viewer.showModal();
 }
 
 function render() {
@@ -288,6 +373,7 @@ function render() {
       const date = m.date ? esc(m.date) : "(n/a)";
       const score = formatScore(m);
       const notes = m.notes ? `<div class="match__notes">${esc(m.notes)}</div>` : "";
+      const photosBlock = matchPhotoThumbsHtml(m);
 
       return `
         <article class="match" data-id="${esc(m.id)}">
@@ -304,6 +390,7 @@ function render() {
 
           <div class="match__mid">
             <div class="kv"><div class="k">Strokes</div><div class="v">${esc(score)}</div></div>
+            ${photosBlock}
             ${notes}
           </div>
 
@@ -326,7 +413,12 @@ function openEditor(match) {
     notes: "",
     winner: "Walter",
     scores: { Walter: null, Erik: null },
+    photos: [],
   };
+
+  editingPhotos = normalizePhotos(m.photos);
+  renderPhotoPreview();
+  if ($photos) $photos.value = "";
 
   $editorTitle.textContent = isNew ? "Nuova partita" : "Modifica partita";
   $matchId.value = m.id;
@@ -391,6 +483,12 @@ $btnReset.addEventListener("click", () => {
 $btnClose.addEventListener("click", closeEditor);
 $btnCancel.addEventListener("click", closeEditor);
 
+if ($btnCloseViewer) {
+  $btnCloseViewer.addEventListener("click", () => {
+    if ($viewer.open) $viewer.close();
+  });
+}
+
 $btnDelete.addEventListener("click", () => {
   const id = $matchId.value;
   const ok = confirm("Eliminare questa partita?");
@@ -400,14 +498,63 @@ $btnDelete.addEventListener("click", () => {
 });
 
 $list.addEventListener("click", (e) => {
+  const card = e.target.closest(".match");
+  const matchId = card?.getAttribute("data-id");
+
+  const open = e.target.closest("[data-photo-open]");
+  if (open && matchId) {
+    const photoId = open.getAttribute("data-photo-id");
+    if (photoId) openViewer(matchId, photoId);
+    return;
+  }
+
   const btn = e.target.closest("button[data-action]");
   if (!btn) return;
-  const card = e.target.closest(".match");
-  const id = card?.getAttribute("data-id");
-  if (!id) return;
-  const m = state.matches.find((x) => x.id === id);
+  if (!matchId) return;
+  const m = state.matches.find((x) => x.id === matchId);
   if (m) openEditor(m);
 });
+
+if ($photoPreview) {
+  $photoPreview.addEventListener("click", (e) => {
+    const x = e.target.closest(".photo__x");
+    if (!x) return;
+    const wrap = e.target.closest(".photo");
+    const id = wrap?.getAttribute("data-photo-id");
+    if (!id) return;
+    editingPhotos = editingPhotos.filter((p) => p.id !== id);
+    renderPhotoPreview();
+  });
+}
+
+if ($photos) {
+  $photos.addEventListener("change", async () => {
+    const files = Array.from($photos.files || []);
+    if (!files.length) return;
+
+    // basic safety: avoid huge memory usage
+    const MAX_FILES = 6;
+    const take = files.slice(0, MAX_FILES);
+
+    for (const file of take) {
+      if (!file.type.startsWith("image/")) continue;
+      // soft cap: skip very large files (e.g. > 4MB)
+      if (file.size > 4_000_000) {
+        alert(`Foto troppo grande: ${file.name}. Consiglio di ridurla (screenshot) e riprovare.`);
+        continue;
+      }
+      try {
+        const dataUrl = await readFileAsDataUrl(file);
+        editingPhotos.push({ id: uid(), name: file.name, type: file.type, dataUrl });
+      } catch {
+        alert("Non riesco a leggere una foto. Riprova.");
+      }
+    }
+
+    $photos.value = "";
+    renderPhotoPreview();
+  });
+}
 
 $form.addEventListener("submit", () => {
   const id = $matchId.value || uid();
@@ -430,6 +577,7 @@ $form.addEventListener("submit", () => {
     notes,
     winner,
     scores: { Walter: Number.isFinite(sw) ? sw : null, Erik: Number.isFinite(se) ? se : null },
+    photos: normalizePhotos(editingPhotos),
   };
 
   upsertMatch(m);

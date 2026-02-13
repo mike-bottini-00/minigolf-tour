@@ -117,6 +117,21 @@
             </label>
           </div>
         </fieldset>
+
+        <fieldset class="fieldset">
+          <legend>Foto (opzionale)</legend>
+          <div class="form__row">
+            <label class="field">
+              <span>Aggiungi foto</span>
+              <input id="photos" type="file" accept="image/*" multiple />
+            </label>
+            <div class="field">
+              <span>Anteprima</span>
+              <div id="photoPreview" class="photos" aria-label="Anteprima foto"></div>
+            </div>
+          </div>
+          <div class="hint">Le foto vengono salvate sul tuo dispositivo (localStorage). Con tanti scatti il browser può diventare pesante.</div>
+        </fieldset>
       </div>
 
       <div class="modal__actions">
@@ -125,6 +140,20 @@
         <button type="button" id="btnCancel" class="btn">Annulla</button>
         <button type="submit" class="btn btn--primary">Salva</button>
       </div>
+    </form>
+  </dialog>
+
+  <!-- Photo viewer modal -->
+  <dialog id="viewer" class="modal">
+    <form method="dialog" class="modal__card modal__card--viewer">
+      <div class="modal__head">
+        <div>
+          <div class="modal__title" id="viewerTitle">Foto</div>
+          <div class="modal__sub" id="viewerSub"></div>
+        </div>
+        <button type="button" id="btnCloseViewer" class="icon" aria-label="Chiudi">✕</button>
+      </div>
+      <img id="viewerImg" class="viewer__img" alt="Foto partita" />
     </form>
   </dialog>
 
