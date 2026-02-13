@@ -329,8 +329,9 @@ async function supabaseGetState() {
 }
 
 async function supabaseWriteState(data) {
-  const token = localStorage.getItem(LOCAL_WRITE_TOKEN_KEY) || '';
+  const token = (localStorage.getItem(LOCAL_WRITE_TOKEN_KEY) || '').trim();
   if (!token) throw new Error('missing_write_token');
+
   const res = await fetch(SUPABASE_WRITE_ENDPOINT, {
     method: 'POST',
     headers: {
@@ -341,10 +342,17 @@ async function supabaseWriteState(data) {
     },
     body: JSON.stringify({ data }),
   });
+
+  // If auth fails, clear local token so the next edit will ask again.
+  if (res.status === 401 || res.status === 403) {
+    localStorage.removeItem(LOCAL_WRITE_TOKEN_KEY);
+  }
+
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new Error('supabase_write_failed:' + res.status + ':' + text.slice(0, 120));
+    throw new Error('supabase_write_failed:' + res.status + ':' + text.slice(0, 180));
   }
+
   return await res.json().catch(() => ({ ok: true }));
 }
 
@@ -365,14 +373,27 @@ let syncAlerted = false;
 function scheduleSync() {
   clearTimeout(syncTimer);
   syncTimer = setTimeout(async () => {
-    try {
-      await supabaseWriteState(state);
-      syncAlerted = false;
-    } catch (e) {
-      console.error(e);
-      if (!syncAlerted) {
-        syncAlerted = true;
-        alert('Sync online fallito (salvato solo sul tuo device). Riprova tra poco.');
+    const attempts = 2;
+    for (let i = 0; i < attempts; i++) {
+      try {
+        await supabaseWriteState(state);
+        syncAlerted = false;
+        return;
+      } catch (e) {
+        console.error(e);
+
+        // tiny retry (often fixes flaky mobile networks)
+        if (i < attempts - 1) {
+          await new Promise((r) => setTimeout(r, 900));
+          continue;
+        }
+
+        if (!syncAlerted) {
+          syncAlerted = true;
+          const msg = String(e?.message || e);
+          // Show compact reason to speed up debugging
+          alert('Sync online fallito (salvato solo sul tuo device).\nDettaglio: ' + msg.slice(0, 120));
+        }
       }
     }
   }, 650);
