@@ -233,6 +233,83 @@ function readFileAsDataUrl(file) {
   });
 }
 
+function loadImageFromFile(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("image_load_failed"));
+    const url = URL.createObjectURL(file);
+    img.src = url;
+    img.__ocUrl = url;
+  });
+}
+
+function cleanupImage(img) {
+  try {
+    if (img && img.__ocUrl) URL.revokeObjectURL(img.__ocUrl);
+  } catch {}
+}
+
+async function downscaleToDataUrl(file, opts = {}) {
+  // Reasonable defaults for iPhone pics
+  const maxDim = opts.maxDim ?? 1600;
+  const quality = opts.quality ?? 0.82;
+
+  // If browser can't decode this format, throw.
+  const img = await loadImageFromFile(file);
+  try {
+    const w = img.naturalWidth || img.width;
+    const h = img.naturalHeight || img.height;
+    if (!w || !h) throw new Error("bad_image");
+
+    const scale = Math.min(1, maxDim / Math.max(w, h));
+    const tw = Math.max(1, Math.round(w * scale));
+    const th = Math.max(1, Math.round(h * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = tw;
+    canvas.height = th;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("no_canvas");
+
+    // Draw
+    ctx.drawImage(img, 0, 0, tw, th);
+
+    // Prefer JPEG to drastically cut size; keep PNG only if original was PNG and small
+    const preferJpeg = file.type !== "image/png";
+    const mime = preferJpeg ? "image/jpeg" : "image/png";
+
+    let dataUrl = canvas.toDataURL(mime, quality);
+
+    // If still huge, try lower quality (JPEG)
+    if (mime === "image/jpeg" && dataUrl.length > 2_200_000) {
+      dataUrl = canvas.toDataURL("image/jpeg", 0.72);
+    }
+
+    return { dataUrl, outType: mime };
+  } finally {
+    cleanupImage(img);
+  }
+}
+
+function prettyBytes(n) {
+  const u = ["B", "KB", "MB", "GB"];
+  let i = 0;
+  let x = Number(n) || 0;
+  while (x >= 1024 && i < u.length - 1) {
+    x /= 1024;
+    i++;
+  }
+  return `${x.toFixed(i ? 1 : 0)} ${u[i]}`;
+}
+
+function dataUrlApproxBytes(dataUrl) {
+  // rough estimate: base64 length * 3/4
+  const comma = dataUrl.indexOf(",");
+  const b64 = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
+  return Math.floor((b64.length * 3) / 4);
+}
+
 // DOM
 const $stats = document.getElementById("stats");
 const $matchesMeta = document.getElementById("matchesMeta");
@@ -538,16 +615,21 @@ if ($photos) {
 
     for (const file of take) {
       if (!file.type.startsWith("image/")) continue;
-      // soft cap: skip very large files (e.g. > 4MB)
-      if (file.size > 4_000_000) {
-        alert(`Foto troppo grande: ${file.name}. Consiglio di ridurla (screenshot) e riprovare.`);
-        continue;
-      }
+
       try {
-        const dataUrl = await readFileAsDataUrl(file);
-        editingPhotos.push({ id: uid(), name: file.name, type: file.type, dataUrl });
+        // Always downscale/compress iPhone pics.
+        const { dataUrl, outType } = await downscaleToDataUrl(file, { maxDim: 1600, quality: 0.82 });
+        const approx = dataUrlApproxBytes(dataUrl);
+
+        // Hard cap after compression (still too big)
+        if (approx > 2_700_000) {
+          alert(`Foto ancora troppo grande anche dopo compressione: ${file.name} (~${prettyBytes(approx)}). Prova uno screenshot o una foto più piccola.`);
+          continue;
+        }
+
+        editingPhotos.push({ id: uid(), name: file.name, type: outType, dataUrl });
       } catch {
-        alert("Non riesco a leggere una foto. Riprova.");
+        alert("Non riesco a importare questa foto (formato non supportato o errore). Prova uno screenshot e riprova.");
       }
     }
 
