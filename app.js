@@ -413,6 +413,16 @@ function scheduleSync() {
         console.error(e);
         const msg = String(e?.message || e);
 
+        // If we don't have the admin token, ask and retry.
+        if (msg.includes('missing_write_token')) {
+          if (ensureWriteToken()) {
+            // restart attempts with token now set
+            i = -1;
+            delay = 900;
+            continue;
+          }
+        }
+
         if (i === maxAttempts - 1) {
           setSyncBadge('error', 'errore');
           if (!syncAlerted) {
